@@ -66,6 +66,8 @@ public class CassandraClientConfig
     private Duration noHostAvailableRetryTimeout = new Duration(1, MINUTES);
     private int speculativeExecutionLimit = 1;
     private Duration speculativeExecutionDelay = new Duration(500, MILLISECONDS);
+    private boolean ssl;
+    private boolean verifyCertificate = true;
 
     @NotNull
     @Size(min = 1)
@@ -377,6 +379,30 @@ public class CassandraClientConfig
     public CassandraClientConfig setSpeculativeExecutionDelay(Duration speculativeExecutionDelay)
     {
         this.speculativeExecutionDelay = speculativeExecutionDelay;
+        return this;
+    }
+
+    public boolean isSsl()
+    {
+        return ssl;
+    }
+
+    @Config("cassandra.ssl")
+    public CassandraClientConfig setSsl(boolean ssl)
+    {
+        this.ssl = ssl;
+        return this;
+    }
+
+    public boolean isVerifyCertificate()
+    {
+        return verifyCertificate;
+    }
+
+    @Config("cassandra.ssl.verify-certificate")
+    public CassandraClientConfig setVerifyCertificate(boolean verifyCertificate)
+    {
+        this.verifyCertificate = verifyCertificate;
         return this;
     }
 }

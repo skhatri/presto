@@ -14,6 +14,7 @@
 package com.facebook.presto.cassandra;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.JdkSSLOptions;
 import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.SocketOptions;
@@ -125,6 +126,15 @@ public class CassandraClientModule
             socketOptions.setSoLinger(config.getClientSoLinger());
         }
         clusterBuilder.withSocketOptions(socketOptions);
+
+        if (config.isSsl()) {
+            if (config.isVerifyCertificate()) {
+                clusterBuilder.withSSL();
+            }
+            else {
+                clusterBuilder.withSSL(JdkSSLOptions.builder().withSSLContext(CassandraNoVerification.createContext()).build());
+            }
+        }
 
         if (config.getUsername() != null && config.getPassword() != null) {
             clusterBuilder.withCredentials(config.getUsername(), config.getPassword());
