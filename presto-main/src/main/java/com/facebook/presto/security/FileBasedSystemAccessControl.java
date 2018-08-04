@@ -16,6 +16,7 @@ package com.facebook.presto.security;
 import com.facebook.presto.spi.CatalogSchemaName;
 import com.facebook.presto.spi.CatalogSchemaTableName;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.security.AccessDeniedException;
 import com.facebook.presto.spi.security.Identity;
 import com.facebook.presto.spi.security.Privilege;
 import com.facebook.presto.spi.security.SystemAccessControl;
@@ -25,6 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.json.ObjectMapperProvider;
+import io.airlift.log.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -37,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.facebook.presto.spi.security.AccessDeniedException.denyCatalogAccess;
 import static com.facebook.presto.spi.security.AccessDeniedException.denySetUser;
@@ -50,9 +53,13 @@ public class FileBasedSystemAccessControl
     public static final String NAME = "file";
 
     private final List<CatalogAccessControlRule> catalogRules;
+
     private final Optional<List<PrincipalUserMatchRule>> principalUserMatchRules;
 
-    private FileBasedSystemAccessControl(List<CatalogAccessControlRule> catalogRules, Optional<List<PrincipalUserMatchRule>> principalUserMatchRules)
+    private static final Logger log = Logger.get(FileBasedSystemAccessControl.class);
+
+    private FileBasedSystemAccessControl(List<CatalogAccessControlRule> catalogRules,
+                                         Optional<List<PrincipalUserMatchRule>> principalUserMatchRules)
     {
         this.catalogRules = catalogRules;
         this.principalUserMatchRules = principalUserMatchRules;
@@ -96,7 +103,10 @@ public class FileBasedSystemAccessControl
                 catalogRulesBuilder.add(new CatalogAccessControlRule(
                         true,
                         Optional.of(Pattern.compile(".*")),
-                        Optional.of(Pattern.compile("system"))));
+                        Optional.of(Pattern.compile("system")),
+                        Optional.of(Pattern.compile(".*")),
+                        Optional.of(Pattern.compile(".*")),
+                        Optional.empty()));
 
                 return new FileBasedSystemAccessControl(catalogRulesBuilder.build(), rules.getPrincipalUserMatchRules());
             }
@@ -181,6 +191,17 @@ public class FileBasedSystemAccessControl
         return false;
     }
 
+    private Optional<CatalogAccessControlRule> findAccessCatalog(Identity identity, String catalogName)
+    {
+        for (CatalogAccessControlRule rule : catalogRules) {
+            Optional<Boolean> allowed = rule.match(identity.getUser(), catalogName);
+            if (allowed.isPresent() && allowed.get()) {
+                return Optional.of(rule);
+            }
+        }
+        return Optional.empty();
+    }
+
     @Override
     public void checkCanCreateSchema(Identity identity, CatalogSchemaName schema)
     {
@@ -204,11 +225,15 @@ public class FileBasedSystemAccessControl
     @Override
     public Set<String> filterSchemas(Identity identity, String catalogName, Set<String> schemaNames)
     {
-        if (!canAccessCatalog(identity, catalogName)) {
+        Optional<CatalogAccessControlRule> ruleOption = findAccessCatalog(identity, catalogName);
+        if (!ruleOption.isPresent()) {
             return ImmutableSet.of();
         }
-
-        return schemaNames;
+        CatalogAccessControlRule rule = ruleOption.get();
+        return schemaNames.stream().filter(schema -> {
+            Optional<Boolean> allowed = rule.matchSchema(identity.getUser(), schema);
+            return allowed.isPresent() && allowed.get();
+        }).collect(Collectors.toSet());
     }
 
     @Override
@@ -234,11 +259,16 @@ public class FileBasedSystemAccessControl
     @Override
     public Set<SchemaTableName> filterTables(Identity identity, String catalogName, Set<SchemaTableName> tableNames)
     {
-        if (!canAccessCatalog(identity, catalogName)) {
+        Optional<CatalogAccessControlRule> ruleOption = findAccessCatalog(identity, catalogName);
+        if (!ruleOption.isPresent()) {
             return ImmutableSet.of();
         }
+        CatalogAccessControlRule rule = ruleOption.get();
 
-        return tableNames;
+        return tableNames.stream().filter(schemaTableName -> {
+            Optional<Boolean> allowed = rule.matchTable(identity.getUser(), schemaTableName.getTableName());
+            return allowed.isPresent() && allowed.get();
+        }).collect(Collectors.toSet());
     }
 
     @Override
@@ -259,6 +289,16 @@ public class FileBasedSystemAccessControl
     @Override
     public void checkCanSelectFromColumns(Identity identity, CatalogSchemaTableName table, Set<String> columns)
     {
+        Optional<CatalogAccessControlRule> ruleOption = findAccessCatalog(identity, table.getCatalogName());
+        ruleOption.ifPresent(rule ->
+                rule.getColumnRegex().ifPresent(pattern -> {
+                    List<String> restrictedColumns = columns.stream().filter(c -> pattern.matcher(c).matches())
+                            .collect(Collectors.toList());
+                    if (!restrictedColumns.isEmpty()) {
+                        log.error("denied columns found " + String.join(",", restrictedColumns));
+                        AccessDeniedException.denySelectColumns(table.getSchemaTableName().getTableName(), restrictedColumns);
+                    }
+                }));
     }
 
     @Override

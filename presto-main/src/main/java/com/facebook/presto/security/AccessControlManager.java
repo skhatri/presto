@@ -20,6 +20,7 @@ import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
+import com.facebook.presto.spi.security.AccessDeniedException;
 import com.facebook.presto.spi.security.Identity;
 import com.facebook.presto.spi.security.Privilege;
 import com.facebook.presto.spi.security.SystemAccessControl;
@@ -531,6 +532,12 @@ public class AccessControlManager
 
         authenticationCheck(() -> checkCanAccessCatalog(identity, tableName.getCatalogName()));
 
+        authorizationCheck(() -> {
+            SchemaTableName querySchemaTableName = tableName.asCatalogSchemaTableName().getSchemaTableName();
+            if (systemAccessControl.get().filterTables(identity, tableName.getCatalogName(), ImmutableSet.of(querySchemaTableName)).size() != 1) {
+                AccessDeniedException.denySelectTable(tableName.getObjectName());
+            }
+        });
         authorizationCheck(() -> systemAccessControl.get().checkCanSelectFromColumns(identity, tableName.asCatalogSchemaTableName(), columnNames));
 
         CatalogAccessControlEntry entry = getConnectorAccessControl(transactionId, tableName.getCatalogName());
