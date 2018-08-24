@@ -20,16 +20,16 @@ import com.google.common.collect.ImmutableList;
 import java.util.List;
 import java.util.Optional;
 
-public class AccessControlRules
+public class AccessControlRulesWithColumns
 {
     private final List<SchemaAccessControlRule> schemaRules;
-    private final List<TableAccessControlRule> tableRules;
+    private final List<TableWithColumnsAccessControlRule> tableRules;
     private final List<SessionPropertyAccessControlRule> sessionPropertyRules;
 
     @JsonCreator
-    public AccessControlRules(
+    public AccessControlRulesWithColumns(
             @JsonProperty("schemas") Optional<List<SchemaAccessControlRule>> schemaRules,
-            @JsonProperty("tables") Optional<List<TableAccessControlRule>> tableRules,
+            @JsonProperty("tables") Optional<List<TableWithColumnsAccessControlRule>> tableRules,
             @JsonProperty("sessionProperties") Optional<List<SessionPropertyAccessControlRule>> sessionPropertyRules)
     {
         this.schemaRules = schemaRules.orElse(ImmutableList.of());
@@ -42,7 +42,7 @@ public class AccessControlRules
         return schemaRules;
     }
 
-    public List<TableAccessControlRule> getTableRules()
+    public List<TableWithColumnsAccessControlRule> getTableRules()
     {
         return tableRules;
     }

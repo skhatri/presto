@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.hive.security;
 
+import com.facebook.presto.plugin.base.security.FileBasedAccessControlExtended;
 import com.facebook.presto.plugin.base.security.FileBasedAccessControlModule;
 import com.facebook.presto.plugin.base.security.ReadOnlySecurityModule;
 import com.google.inject.Binder;
@@ -29,6 +30,7 @@ public class HiveSecurityModule
     {
         bindSecurityModule("legacy", new LegacySecurityModule());
         bindSecurityModule("file", new FileBasedAccessControlModule());
+        bindSecurityModule("extended", new FileBasedAccessControlExtended());
         bindSecurityModule("read-only", new ReadOnlySecurityModule());
         bindSecurityModule("sql-standard", new SqlStandardSecurityModule());
     }

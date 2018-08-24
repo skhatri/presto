@@ -24,24 +24,28 @@ import java.util.regex.Pattern;
 
 import static java.util.Objects.requireNonNull;
 
-public class TableAccessControlRule
+public class TableWithColumnsAccessControlRule
 {
     private final Set<TablePrivilege> privileges;
     private final Optional<Pattern> userRegex;
     private final Optional<Pattern> schemaRegex;
     private final Optional<Pattern> tableRegex;
+    private final Optional<Pattern> columnRegex;
 
     @JsonCreator
-    public TableAccessControlRule(
+    public TableWithColumnsAccessControlRule(
             @JsonProperty("privileges") Set<TablePrivilege> privileges,
             @JsonProperty("user") Optional<Pattern> userRegex,
             @JsonProperty("schema") Optional<Pattern> schemaRegex,
-            @JsonProperty("table") Optional<Pattern> tableRegex)
+            @JsonProperty("table") Optional<Pattern> tableRegex,
+            @JsonProperty("restricted_columns") Optional<Pattern> columnRegex
+            )
     {
         this.privileges = ImmutableSet.copyOf(requireNonNull(privileges, "privileges is null"));
         this.userRegex = requireNonNull(userRegex, "userRegex is null");
         this.schemaRegex = requireNonNull(schemaRegex, "sourceRegex is null");
         this.tableRegex = requireNonNull(tableRegex, "tableRegex is null");
+        this.columnRegex = requireNonNull(columnRegex, "columnRegex is null");
     }
 
     public Optional<Set<TablePrivilege>> match(String user, SchemaTableName table)
@@ -52,6 +56,31 @@ public class TableAccessControlRule
             return Optional.of(privileges);
         }
         return Optional.empty();
+    }
+
+
+    public Optional<Pattern> getColumnRegex()
+    {
+        return columnRegex;
+    }
+
+    public Optional<Pattern> getSchemaRegex() {
+        return schemaRegex;
+    }
+
+    public Optional<Pattern> getTableRegex() {
+        return tableRegex;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("user=").append(userRegex.orElse(null))
+                .append(", schema=")
+                .append(schemaRegex.orElse(null))
+                .append(", table=").append(tableRegex.orElse(null))
+        .append(", columns=").append(columnRegex.orElse(null));
+        return builder.toString();
     }
 
     public enum TablePrivilege

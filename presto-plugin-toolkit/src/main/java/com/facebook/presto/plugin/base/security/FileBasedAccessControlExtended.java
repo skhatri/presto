@@ -20,13 +20,13 @@ import com.google.inject.Scopes;
 
 import static io.airlift.configuration.ConfigBinder.configBinder;
 
-public class FileBasedAccessControlModule
+public class FileBasedAccessControlExtended
         implements Module
 {
     @Override
     public void configure(Binder binder)
     {
-        binder.bind(ConnectorAccessControl.class).to(FileBasedAccessControl.class).in(Scopes.SINGLETON);
-        configBinder(binder).bindConfig(FileBasedAccessControlConfig.class);
+        binder.bind(ConnectorAccessControl.class).to(FileBasedAccessControlExt.class).in(Scopes.SINGLETON);
+        configBinder(binder).bindConfig(FileBasedAccessControlWithColumnsConfig.class);
     }
 }

@@ -16,10 +16,12 @@ package com.facebook.presto.plugin.base.security;
 import io.airlift.configuration.Config;
 
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Null;
 
-public class FileBasedAccessControlConfig
+public class FileBasedAccessControlWithColumnsConfig
 {
     private String configFile;
+    private Boolean enableColumnsSecurity = false;
 
     @NotNull
     public String getConfigFile()
@@ -27,10 +29,22 @@ public class FileBasedAccessControlConfig
         return configFile;
     }
 
+    @Null
+    public Boolean isEnableColumnsSecurity() {
+        return enableColumnsSecurity;
+    }
+
     @Config("security.config-file")
-    public FileBasedAccessControlConfig setConfigFile(String configFile)
+    public FileBasedAccessControlWithColumnsConfig setConfigFile(String configFile)
     {
         this.configFile = configFile;
+        return this;
+    }
+
+    @Config("security.enable-columns-security")
+    public FileBasedAccessControlWithColumnsConfig setEnableColumnsSecurity(Boolean enableColumnsSecurity)
+    {
+        this.enableColumnsSecurity = enableColumnsSecurity;
         return this;
     }
 }

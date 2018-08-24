@@ -13,7 +13,7 @@
  */
 package com.facebook.presto.plugin.base.security;
 
-import com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege;
+import com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
@@ -26,23 +26,23 @@ import com.google.common.collect.ImmutableSet;
 import io.airlift.json.ObjectMapperProvider;
 
 import javax.inject.Inject;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
-import static com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege.DELETE;
-import static com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege.GRANT_SELECT;
-import static com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege.INSERT;
-import static com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege.OWNERSHIP;
-import static com.facebook.presto.plugin.base.security.TableAccessControlRule.TablePrivilege.SELECT;
+import static com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege.DELETE;
+import static com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege.GRANT_SELECT;
+import static com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege.INSERT;
+import static com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege.OWNERSHIP;
+import static com.facebook.presto.plugin.base.security.TableWithColumnsAccessControlRule.TablePrivilege.SELECT;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyAddColumn;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyCreateTable;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyCreateView;
-import static com.facebook.presto.spi.security.AccessDeniedException.denyCreateViewWithSelect;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyDeleteTable;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyDropColumn;
 import static com.facebook.presto.spi.security.AccessDeniedException.denyDropTable;
@@ -55,36 +55,39 @@ import static com.facebook.presto.spi.security.AccessDeniedException.denyRevokeT
 import static com.facebook.presto.spi.security.AccessDeniedException.denySelectTable;
 import static java.lang.String.format;
 
-public class FileBasedAccessControl
+public class FileBasedAccessControlExt
         implements ConnectorAccessControl
 {
     private static final String INFORMATION_SCHEMA_NAME = "information_schema";
 
     private final List<SchemaAccessControlRule> schemaRules;
-    private final List<TableAccessControlRule> tableRules;
+    private final List<TableWithColumnsAccessControlRule> tableRules;
     private final List<SessionPropertyAccessControlRule> sessionPropertyRules;
+    private static final Logger log = Logger.getLogger(FileBasedAccessControlExt.class.getName());
+    private final Boolean enableColumnsSecurity;
 
     @Inject
-    public FileBasedAccessControl(FileBasedAccessControlConfig config)
+    public FileBasedAccessControlExt(FileBasedAccessControlWithColumnsConfig config)
             throws IOException
     {
-        AccessControlRules rules = parse(Files.readAllBytes(Paths.get(config.getConfigFile())));
-
+        log.info("file based access control, file=" + config.getConfigFile() + ", enable-columns-security=" + config.isEnableColumnsSecurity());
+        AccessControlRulesWithColumns rules = parse(Files.readAllBytes(Paths.get(config.getConfigFile())));
+        this.enableColumnsSecurity = config.isEnableColumnsSecurity();
         this.schemaRules = rules.getSchemaRules();
         this.tableRules = rules.getTableRules();
         this.sessionPropertyRules = rules.getSessionPropertyRules();
     }
 
-    private static AccessControlRules parse(byte[] json)
+    private static AccessControlRulesWithColumns parse(byte[] json)
     {
         ObjectMapper mapper = new ObjectMapperProvider().get()
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        Class<AccessControlRules> javaType = AccessControlRules.class;
+        Class<AccessControlRulesWithColumns> javaType = AccessControlRulesWithColumns.class;
         try {
             return mapper.readValue(json, javaType);
         }
         catch (IOException e) {
-            throw new IllegalArgumentException(format("Invalid JSON string for %s", javaType), e);
+            throw new IllegalArgumentException(format("Extended File Rule: Invalid JSON string for %s", javaType), e);
         }
     }
 
@@ -96,7 +99,11 @@ public class FileBasedAccessControl
     @Override
     public Set<String> filterSchemas(ConnectorTransactionHandle transactionHandle, Identity identity, Set<String> schemaNames)
     {
-        return schemaNames;
+        log.info("task=catalog-filter-schemas, identity=" + identity.getUser() + ",\n schemas=\"" + String.join(", ", schemaNames)
+                + "\"");
+        Set<String> allowedSchemas = schemaNames.stream().filter(schema -> findAccessSchema(identity, schema).isPresent()).collect(Collectors.toSet());
+        log.info("task=catalog-filter-schemas, identity=" + identity.getUser() + ", allowed=" + String.join(",", allowedSchemas));
+        return allowedSchemas;
     }
 
     @Override
@@ -120,10 +127,29 @@ public class FileBasedAccessControl
     {
     }
 
-    @Override
-    public Set<SchemaTableName> filterTables(ConnectorTransactionHandle transactionHandle, Identity identity, Set<SchemaTableName> tableNames)
+
+    private Optional<SchemaAccessControlRule> findAccessSchema(Identity identity, String schemaName)
     {
-        return tableNames;
+        for (SchemaAccessControlRule rule : schemaRules) {
+            Optional<Boolean> allowed = rule.match(identity.getUser(), schemaName);
+            if (allowed.isPresent() && allowed.get()) {
+                return Optional.of(rule);
+            }
+        }
+        return Optional.empty();
+    }
+
+
+    @Override
+    public Set<SchemaTableName> filterTables(ConnectorTransactionHandle transactionHandle, Identity identity, Set<SchemaTableName> tableNames) {
+        log.info("task=catalog-filter-tables, identity=" + identity.getUser()
+                + ", tables=\"" + tableNames.stream().map(f -> f.getSchemaName() + "." + f.getTableName()).collect(Collectors.joining(", "))
+                + "\"");
+        Set<SchemaTableName> allowedTables = tableNames.stream().filter(tableName -> checkTablePermission(identity, tableName)).collect(Collectors.toSet());
+
+        log.info("task=catalog-filter-tables, identity=" + identity.getUser()
+                + ", allowed-tables=" + allowedTables.stream().map(a -> a.getSchemaName() + "." + a.getTableName()).collect(Collectors.joining(",")));
+        return allowedTables;
     }
 
     @Override
@@ -161,9 +187,29 @@ public class FileBasedAccessControl
     @Override
     public void checkCanSelectFromColumns(ConnectorTransactionHandle transactionHandle, Identity identity, SchemaTableName tableName, Set<String> columnNames)
     {
-        // TODO: Implement column level permissions
-        if (!checkTablePermission(identity, tableName, SELECT)) {
-            denySelectTable(tableName.toString());
+        if (enableColumnsSecurity) {
+            log.info("task=catalog-check-column, identity=" + identity.getUser() + ",\n table=\"" + tableName.getSchemaName() + "." + tableName.getTableName() + "\", columns=\"" + String.join(",", columnNames)
+                    + "\"");
+            // TODO: Implement column level permissions
+            if (!checkTablePermission(identity, tableName, SELECT)) {
+                denySelectTable(tableName.toString());
+            }
+
+            Optional<TableWithColumnsAccessControlRule> tableRule = tableRules.stream().filter(tr -> {
+                Optional<Set<TablePrivilege>> privileges = tr.match(identity.getUser(), tableName);
+                return privileges.isPresent() && privileges.get().contains(TablePrivilege.SELECT);
+            }).findFirst();
+
+            tableRule.ifPresent(rule -> {
+                rule.getColumnRegex().ifPresent(pattern -> {
+                    List<String> restrictedColumns = columnNames.stream().filter(c -> pattern.matcher(c).matches())
+                            .collect(Collectors.toList());
+                    if (!restrictedColumns.isEmpty()) {
+                        log.warning("denied columns found " + String.join(",", restrictedColumns));
+                        AccessDeniedException.denySelectColumns(tableName.getTableName(), restrictedColumns);
+                    }
+                });
+            });
         }
     }
 
@@ -207,7 +253,7 @@ public class FileBasedAccessControl
             denySelectTable(tableName.toString());
         }
         if (!checkTablePermission(identity, tableName, GRANT_SELECT)) {
-            denyCreateViewWithSelect(tableName.toString(), identity);
+            //denyCreateViewWithSelect(tableName.toString(), identity);
         }
     }
 
@@ -255,8 +301,8 @@ public class FileBasedAccessControl
             return true;
         }
 
-        for (TableAccessControlRule rule : tableRules) {
-            Optional<Set<TablePrivilege>> tablePrivileges = rule.match(identity.getUser(), tableName);
+        for (TableWithColumnsAccessControlRule rule : tableRules) {
+            Optional<Set<TableWithColumnsAccessControlRule.TablePrivilege>> tablePrivileges = rule.match(identity.getUser(), tableName);
             if (tablePrivileges.isPresent()) {
                 return tablePrivileges.get().containsAll(ImmutableSet.copyOf(requiredPrivileges));
             }

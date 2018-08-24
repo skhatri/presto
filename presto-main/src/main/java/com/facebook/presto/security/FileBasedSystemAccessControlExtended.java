@@ -47,19 +47,19 @@ import static com.google.common.base.Preconditions.checkState;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
-public class FileBasedSystemAccessControl
+public class FileBasedSystemAccessControlExtended
         implements SystemAccessControl
 {
-    public static final String NAME = "file";
+    public static final String NAME = "extended";
 
     private final List<CatalogAccessControlRule> catalogRules;
 
     private final Optional<List<PrincipalUserMatchRule>> principalUserMatchRules;
 
-    private static final Logger log = Logger.get(FileBasedSystemAccessControl.class);
+    private static final Logger log = Logger.get(FileBasedSystemAccessControlExtended.class);
 
-    private FileBasedSystemAccessControl(List<CatalogAccessControlRule> catalogRules,
-                                         Optional<List<PrincipalUserMatchRule>> principalUserMatchRules)
+    private FileBasedSystemAccessControlExtended(List<CatalogAccessControlRule> catalogRules,
+                                                 Optional<List<PrincipalUserMatchRule>> principalUserMatchRules)
     {
         this.catalogRules = catalogRules;
         this.principalUserMatchRules = principalUserMatchRules;
@@ -108,7 +108,7 @@ public class FileBasedSystemAccessControl
                         Optional.of(Pattern.compile(".*")),
                         Optional.empty()));
 
-                return new FileBasedSystemAccessControl(catalogRulesBuilder.build(), rules.getPrincipalUserMatchRules());
+                return new FileBasedSystemAccessControlExtended(catalogRulesBuilder.build(), rules.getPrincipalUserMatchRules());
             }
             catch (SecurityException | IOException | InvalidPathException e) {
                 throw new RuntimeException(e);
