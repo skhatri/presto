@@ -65,6 +65,7 @@ public class FileBasedAccessControlExt
     private final List<SessionPropertyAccessControlRule> sessionPropertyRules;
     private static final Logger log = Logger.getLogger(FileBasedAccessControlExt.class.getName());
     private final Boolean enableColumnsSecurity;
+    private final Boolean logDecisions;
 
     @Inject
     public FileBasedAccessControlExt(FileBasedAccessControlWithColumnsConfig config)
@@ -73,6 +74,7 @@ public class FileBasedAccessControlExt
         log.info("file based access control, file=" + config.getConfigFile() + ", enable-columns-security=" + config.isEnableColumnsSecurity());
         AccessControlRulesWithColumns rules = parse(Files.readAllBytes(Paths.get(config.getConfigFile())));
         this.enableColumnsSecurity = config.isEnableColumnsSecurity();
+        this.logDecisions = config.isEnableLogDecisions();
         this.schemaRules = rules.getSchemaRules();
         this.tableRules = rules.getTableRules();
         this.sessionPropertyRules = rules.getSessionPropertyRules();
@@ -142,13 +144,20 @@ public class FileBasedAccessControlExt
 
     @Override
     public Set<SchemaTableName> filterTables(ConnectorTransactionHandle transactionHandle, Identity identity, Set<SchemaTableName> tableNames) {
-        log.info("task=catalog-filter-tables, identity=" + identity.getUser()
-                + ", tables=\"" + tableNames.stream().map(f -> f.getSchemaName() + "." + f.getTableName()).collect(Collectors.joining(", "))
-                + "\"");
-        Set<SchemaTableName> allowedTables = tableNames.stream().filter(tableName -> checkTablePermission(identity, tableName)).collect(Collectors.toSet());
-
-        log.info("task=catalog-filter-tables, identity=" + identity.getUser()
-                + ", allowed-tables=" + allowedTables.stream().map(a -> a.getSchemaName() + "." + a.getTableName()).collect(Collectors.joining(",")));
+        if (logDecisions) {
+            log.info("task=catalog-filter-tables, identity=" + identity.getUser()
+                    + ", tables=\"" + tableNames.stream().map(f -> f.getSchemaName() + "." + f.getTableName()).collect(Collectors.joining(", "))
+                    + "\"");
+        }
+        Set<String> accessibleSchemas = filterSchemas(transactionHandle, identity, tableNames.stream().map(schemaTable -> schemaTable.getSchemaName()).collect(Collectors.toSet()));
+        Set<SchemaTableName> allowedTables = tableNames.stream()
+                .filter(tableName -> accessibleSchemas.contains(tableName.getSchemaName()))
+                .filter(tableName -> checkTablePermission(identity, tableName))
+                .collect(Collectors.toSet());
+        if (logDecisions) {
+            log.info("task=catalog-filter-tables, identity=" + identity.getUser()
+                    + ", allowed-tables=" + allowedTables.stream().map(a -> a.getSchemaName() + "." + a.getTableName()).collect(Collectors.joining(",")));
+        }
         return allowedTables;
     }
 

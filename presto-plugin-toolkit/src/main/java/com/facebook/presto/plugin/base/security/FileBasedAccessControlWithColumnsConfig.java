@@ -22,6 +22,7 @@ public class FileBasedAccessControlWithColumnsConfig
 {
     private String configFile;
     private Boolean enableColumnsSecurity = false;
+    private Boolean enableLogDecisions = false;
 
     @NotNull
     public String getConfigFile()
@@ -29,10 +30,17 @@ public class FileBasedAccessControlWithColumnsConfig
         return configFile;
     }
 
-    @Null
+    @NotNull
     public Boolean isEnableColumnsSecurity() {
         return enableColumnsSecurity;
     }
+
+
+    @NotNull
+    public Boolean isEnableLogDecisions() {
+        return this.enableLogDecisions;
+    }
+
 
     @Config("security.config-file")
     public FileBasedAccessControlWithColumnsConfig setConfigFile(String configFile)
@@ -47,4 +55,11 @@ public class FileBasedAccessControlWithColumnsConfig
         this.enableColumnsSecurity = enableColumnsSecurity;
         return this;
     }
+
+    @Config("security.log-decisions")
+    public FileBasedAccessControlWithColumnsConfig setEnableLogDecisions(Boolean enableLogDecisions) {
+        this.enableLogDecisions = enableLogDecisions;
+        return this;
+    }
+
 }

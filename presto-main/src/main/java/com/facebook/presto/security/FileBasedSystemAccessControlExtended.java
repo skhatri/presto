@@ -265,10 +265,22 @@ public class FileBasedSystemAccessControlExtended
         }
         CatalogAccessControlRule rule = ruleOption.get();
 
-        return tableNames.stream().filter(schemaTableName -> {
-            Optional<Boolean> allowed = rule.matchTable(identity.getUser(), schemaTableName.getTableName());
-            return allowed.isPresent() && allowed.get();
-        }).collect(Collectors.toSet());
+        return tableNames.stream()
+                .filter(schemaTableName -> {
+                    Optional<Boolean> allowed =  rule.matchSchema(identity.getUser(), schemaTableName.getSchemaName());
+                    boolean schemaAccess = allowed.isPresent() && allowed.get();
+                    log.info(String.format("user=%s, schema=%s, access=%s",
+                            identity.getUser(), schemaTableName.getSchemaName(), schemaAccess));
+                    return schemaAccess;
+                })
+                .filter(schemaTableName -> {
+                    Optional<Boolean> allowed =  rule.matchTable(identity.getUser(), schemaTableName.getTableName());
+                    boolean tableAccess = allowed.isPresent() && allowed.get();
+                    log.info(String.format("user=%s, schema=%s, table=%s, access=%s",
+                            identity.getUser(), schemaTableName.getSchemaName(), schemaTableName.getTableName(), tableAccess));
+                    return tableAccess;
+                })
+                .collect(Collectors.toSet());
     }
 
     @Override
